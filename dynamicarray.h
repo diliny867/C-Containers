@@ -11,8 +11,11 @@ size_t dynamicarray_elem_size(void* arr);
 void* dynamicarray_create(size_t elem_size);
 void dynamicarray_destroy(void* arr);
 
+void* _dynamicarray_push(void* arr, void* elem);
 void dynamicarray_pop(void* arr);
 
+void* _dynamicarray_insert_range(void* arr, size_t index, size_t count, void* range);
+void* _dynamicarray_insert(void* arr, size_t index, void* elem);
 void dynamicarray_erase_range(void* arr, size_t index, size_t count);
 void dynamicarray_erase(void* arr, size_t index);
 
