@@ -21,4 +21,4 @@ arena_t* arena_new();
 void arena_free(arena_t* a);
 
 void* arena_alloc(arena_t* a, size_t size);
-void* arena_realloc(arena_t* a, size_t size);
+void* arena_realloc(arena_t* a, void* ptr, size_t old_size, size_t new_size);
