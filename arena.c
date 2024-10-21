@@ -57,6 +57,7 @@ void* arena_alloc(arena_t* a, size_t size){
 
     if(ch->next == NULL){
         ch->next = arena_chunk_new(alloc_size);
+	    a->end = ch->next;
     }
 
     ch->next->size += size;
