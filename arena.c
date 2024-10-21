@@ -20,6 +20,7 @@ arena_t* arena_new(){
     arena_t* a = (arena_t*)malloc(sizeof(arena_t));
     a->start = NULL;
     a->end = NULL;
+    return a;
 }
 void arena_free(arena_t* a){
     if(a->start != NULL){
