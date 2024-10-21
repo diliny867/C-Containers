@@ -23,14 +23,12 @@ arena_t* arena_new(){
     return a;
 }
 void arena_free(arena_t* a){
-    if(a->start != NULL){
-        arena_chunk_t* ch = a->start;
-        arena_chunk_t* curr;
-        do{
-            curr = ch;
-            ch = ch->next;
-            arena_chunk_free(curr);
-        } while (ch != a->start);
+    arena_chunk_t* ch = a->start;
+    arena_chunk_t* curr;
+    while (ch != NULL){
+        curr = ch;
+        ch = ch->next;
+        arena_chunk_free(curr);
     }
     free(a);
 }
@@ -41,28 +39,24 @@ void* arena_alloc(arena_t* a, size_t size){
         alloc_size = ((size - 1) / _ARENA_CHUNK_DEFAULT_CAPACITY + 1) * _ARENA_CHUNK_DEFAULT_CAPACITY;
     }
 
-    arena_chunk_t* ch = a->end;
+    arena_chunk_t* ch = a->start;
 
     if(ch == NULL){
-        a->end = arena_chunk_new(alloc_size);
-        ch = a->end;
-        a->start = ch;
-        ch->next = a->start;
+        a->start = arena_chunk_new(alloc_size);
+        ch = a->start;
+        a->end = ch;
     }
-
     if(ch->size + size <= ch->cap){
         ch->size += size;
         return ch->data + ch->size - size;
     }
 
-    while(ch->next != a->end && ch->next->size + size > ch->next->cap){
+    while(ch->next != NULL && ch->next->size + size > ch->next->cap){
         ch = ch->next;
     }
 
-    if(ch->next == a->end){
-        ch->next->next = arena_chunk_new(alloc_size);
-        ch = ch->next;
-        ch->next->next = a->start;
+    if(ch->next == NULL){
+        ch->next = arena_chunk_new(alloc_size);
     }
 
     ch->next->size += size;
