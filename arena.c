@@ -1,5 +1,6 @@
 #include "arena.h"
 
+#include <string.h>
 
 #define _ARENA_CHUNK_DEFAULT_CAPACITY (16384)
 
@@ -64,3 +65,11 @@ void* arena_alloc(arena_t* a, size_t size){
     return ch->next->data + ch->next->size - size;
 }
 
+void* arena_realloc(arena_t* a, void* ptr, size_t old_size, size_t new_size){
+    if(new_size <= old_size){
+        return ptr;
+    }
+    void* res = arena_alloc(a, new_size);
+    memcpy(res, ptr, new_size);
+    return res;
+}
