@@ -21,17 +21,16 @@ void dynamicarray_erase(void* arr, size_t index);
 
 void dynamicarray_clear(void* arr);
 
+#define rtolvalue(val) ((struct { typeof(val) _; }){val})
+
 #define dynamicarray_push(arr, elem) \
 	do{ \
 		void** tmp_arr = (void**)&arr; \
 		*tmp_arr = _dynamicarray_push((arr), (void*)&(elem)); \
 	} while(0)
 #define dynamicarray_push_rvalue(arr, elem) \
-	do{ \
-		auto tmp = (elem); \
-		void** tmp_arr = (void**)&arr; \
-		*tmp_arr = _dynamicarray_push((arr), (void*)&tmp); \
-	} while(0)
+	dynamicarray_push(arr, rtolvalue(elem))
+
 #define dynamicarray_insert(arr, index, elem) \
 	do{ \
 		void** tmp_arr = (void**)&arr; \
@@ -43,10 +42,6 @@ void dynamicarray_clear(void* arr);
 		*tmp_arr = _dynamicarray_insert_range((arr), (index), (count), (void*)(range)); \
 	} while(0)
 #define dynamicarray_insert_rvalue(arr, index, elem) \
-	do{ \
-		auto tmp = (elem); \
-		void** tmp_arr = (void**)&arr; \
-		*tmp_arr = _dynamicarray_insert((arr), (index), (void*)&tmp); \
-	} while(0)
+	dynamicarray_insert(arr, index, rtolvalue(elem))
 
 
