@@ -29,8 +29,10 @@ typedef struct awarearray_t {
 void _awarr_push(awarearray_t* arr, void* elem);
 void awarr_delete(awarearray_t* arr, size_t index);
 
-awarearray_t* awarr_new(size_t elem_size);
-awarearray_t* awarr_new_cap(size_t min_cap, size_t elem_size);
+//awarearray_t* awarr_new(size_t elem_size);
+//awarearray_t* awarr_new_cap(size_t elem_size, size_t min_cap);
+void awarr_init(awarearray_t* arr, size_t elem_size);
+void awarr_init_cap(awarearray_t* arr, size_t elem_size, size_t min_cap);
 void awarr_expand(awarearray_t* arr, size_t min_cap);
 void awarr_free(awarearray_t* arr);
 
@@ -60,21 +62,30 @@ void awarr_expand(awarearray_t* arr, size_t min_cap){
     }
 }
 
-awarearray_t* awarr_new(size_t elem_size){
-    return awarr_new_cap(_AWARR_DEFAULT_CAP, elem_size);
-}
+// awarearray_t* awarr_new(size_t elem_size){
+//     return awarr_new_cap(elem_size, _AWARR_DEFAULT_CAP);
+// }
+// awarearray_t* awarr_new_cap(size_t elem_size, size_t min_cap){
+//     awarearray_t* arr = (awarearray_t*)malloc(sizeof(awarearray_t));
+//     arr->count = 0;
+//     arr->cap = 0;
+//     arr->elem_size = elem_size;
+//     awarr_expand(arr, min_cap);
+//     return arr;
+// }
 
-awarearray_t* awarr_new_cap(size_t min_cap, size_t elem_size){
-    awarearray_t* arr = (awarearray_t*)malloc(sizeof(awarearray_t));
+void awarr_init(awarearray_t* arr, size_t elem_size){
+    awarr_init_cap(arr, elem_size, _AWARR_DEFAULT_CAP)
+}
+void awarr_init_cap(awarearray_t* arr, size_t elem_size, size_t min_cap){
     arr->count = 0;
     arr->cap = 0;
     arr->elem_size = elem_size;
     awarr_expand(arr, min_cap);
-    return arr;
 }
 
 void _awarr_push(awarearray_t* arr, void* elem){
-    if(!arr || !) return;
+    if(!arr || !elem) return;
     size_t count = arr->count;
     if(count >= arr->cap){
         awarr_expand(arr, arr->cap * 2);
@@ -94,9 +105,13 @@ void awarr_delete(awarearray_t* arr, size_t index){
 }
 
 void awarr_free(awarearray_t* arr){
-    free(arr->data);
-    free(arr->availables);
-    free(arr);
+    if(!arr) return;
+    if(arr->data)
+        free(arr->data);
+    if(arr->availables)
+        free(arr->availables);
+    //free(arr);
 }
 
 #endif
+
