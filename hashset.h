@@ -1,15 +1,13 @@
 #pragma once
 
 #include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <assert.h>
 
 
 typedef struct hashset_t {
     void** data;
     size_t count;
     size_t cap; // must be power of 2
+    size_t bits;
 } hashset_t;
 
 
@@ -23,18 +21,21 @@ void hashset_clear(hashset_t* hs);
 void hashset_destroy(hashset_t* hs);
 
 
-#ifdef HS_IMPLEMENTATION
+#ifdef HASHSET_IMPLEMENTATION
 
-#define _HS_CHUNK_SIZE (2 << 6)
+#include <string.h>
+#include <assert.h>
+
+#define _HS_CHUNK_SIZE (1 << 8)
 #define _HS_INIT_CHUNK_COUNT 4
 
 #ifndef HS_HASH_FUNC
 //http://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
 static size_t murmur3(size_t h) {
   h ^= h >> 33;
-  h *= 0xff51afd7ed558ccdL;
+  h *= 0xff51afd7ed558ccd;
   h ^= h >> 33;
-  h *= 0xc4ceb9fe1a85ec53L;
+  h *= 0xc4ceb9fe1a85ec53;
   h ^= h >> 33;
   return h;
 }
@@ -49,7 +50,7 @@ static size_t murmur3(size_t h) {
 static void hashset_expand(hashset_t* hs){
     if(hs == NULL) return;
     size_t cap = hs->cap;
-    assert(cap & (cap - 1) == 0); // assert its power of 2 (1 or 0 bits set total)
+    assert((cap & (cap - 1)) == 0); // assert its power of 2 (1 or 0 bits set total)
     if(hs->cap == 0) 
         hs->cap = _HS_CHUNK_SIZE * _HS_INIT_CHUNK_COUNT;
     else 
@@ -61,10 +62,11 @@ static void hashset_expand(hashset_t* hs){
 int hashset_add(hashset_t* hs, void* val){
     if(hs == NULL) return 0;
     if(hs->data == NULL) hashset_expand(hs);
-    if(val == NULL){
+    if(val == NULL){ //special case for 0/nullptr
         if(hs->data[0] != 0)
             return 0;
         hs->data[0] = (void*)1;
+        hs->count++;
         return 1;
     }
     
@@ -94,10 +96,11 @@ int hashset_add(hashset_t* hs, void* val){
 int hashset_remove(hashset_t* hs, void* val){
     if(hs == NULL || hs->count == 0) return 0;
     if(hs->data == NULL) hashset_expand(hs);
-    if(val == NULL){
+    if(val == NULL){ //special case for 0/nullptr
         if(hs->data[0] == 0)
             return 0;
         hs->data[0] = (void*)0;
+        hs->count--;
         return 1;
     }
 
@@ -125,7 +128,7 @@ int hashset_remove(hashset_t* hs, void* val){
 int hashset_in(hashset_t* hs, void* val){
     if(hs == NULL || hs->count == 0) return 0;
     if(hs->data == NULL) hashset_expand(hs);
-    if(val == NULL){
+    if(val == NULL){ //special case for 0/nullptr
         if(hs->data[0] == 0)
             return 0;
         return 1;
