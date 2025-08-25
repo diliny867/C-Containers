@@ -7,7 +7,6 @@ typedef struct hashset_t {
     void** data;
     size_t count;
     size_t cap; // must be power of 2
-    size_t bits;
 } hashset_t;
 
 
@@ -51,10 +50,11 @@ static void hashset_expand(hashset_t* hs){
     if(hs == NULL) return;
     size_t cap = hs->cap;
     assert((cap & (cap - 1)) == 0); // assert its power of 2 (1 or 0 bits set total)
-    if(hs->cap == 0) 
+    if(hs->cap == 0) {
         hs->cap = _HS_CHUNK_SIZE * _HS_INIT_CHUNK_COUNT;
-    else 
+    } else { 
         hs->cap <<= 1; // *= 2
+    }
     hs->data = (void**)realloc(hs->data, hs->cap * sizeof(void*));
     memset(hs->data + cap, 0, (hs->cap - cap) * sizeof(void*)); // because there is no realloc for calloc
 }
@@ -74,7 +74,7 @@ int hashset_add(hashset_t* hs, void* val){
     //size_t hash = _hash(sv);
     size_t hash = HS_HASH_FUNC(sv);
     
-    size_t mask = hs->cap - 1;
+    size_t mask = _HS_CHUNK_SIZE - 1;
     size_t i = hash & mask;
     i += (i == 0) * _HS_CHUNK_SIZE; //skip first 0 slot
 
@@ -108,7 +108,7 @@ int hashset_remove(hashset_t* hs, void* val){
     //size_t hash = _hash(sv);
     size_t hash = HS_HASH_FUNC(sv);
     
-    size_t mask = hs->cap - 1;
+    size_t mask = _HS_CHUNK_SIZE - 1;
     size_t i = hash & mask;
     i += (i == 0) * _HS_CHUNK_SIZE; //skip first 0 slot
 
@@ -138,7 +138,7 @@ int hashset_in(hashset_t* hs, void* val){
     //size_t hash = _hash(sv);
     size_t hash = HS_HASH_FUNC(sv);
     
-    size_t mask = hs->cap - 1;
+    size_t mask = _HS_CHUNK_SIZE - 1;
     size_t i = hash & mask;
     i += (i == 0) * _HS_CHUNK_SIZE; //skip first 0 slot
 
