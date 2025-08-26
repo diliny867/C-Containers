@@ -9,21 +9,32 @@ typedef struct hashset_t {
     size_t cap; // must be power of 2
 } hashset_t;
 
+typedef struct hs_iter_t {
+    void* value;
+    hashset_t* _hs;
+    size_t _index;
+} hs_iter_t;
 
+// use if malloced, else not needed with hashset_t hs = {0};
+void hashset_init(hashset_t* hs);
 // added = 1, already exists = 0
 int hashset_add(hashset_t* hs, void* val);
 // removed = 1, not exists = 0
 int hashset_remove(hashset_t* hs, void* val);
 // exists = 1, not exists = 0
-int hashset_in(hashset_t* hs, void* val);
+int hashset_has(hashset_t* hs, void* val);
 void hashset_clear(hashset_t* hs);
 void hashset_destroy(hashset_t* hs);
+
+#define hashset_addi(hs, num)    hashset_add(hs, (void*)num)
+#define hashset_removei(hs, num) hashset_remove(hs, (void*)num)
+#define hashset_hasi(hs, num)    hashset_has(hs, (void*)num)
 
 
 #ifdef HASHSET_IMPLEMENTATION
 
 #include <string.h>
-#include <assert.h>
+//#include <assert.h>
 
 #define _HS_CHUNK_SIZE (1 << 8)
 #define _HS_INIT_CHUNK_COUNT 4
@@ -46,11 +57,16 @@ static size_t murmur3(size_t h) {
 //    return h + (h == 0); // make sure its not 0
 //}
 
-static void hashset_expand(hashset_t* hs){
-    if(hs == NULL) return;
+void hashset_init(hashset_t* hs){
+    hs->data = 0;
+    hs->count = 0;
+    hs->cap = 0;
+}
+
+static inline void hashset_expand(hashset_t* hs){
     size_t cap = hs->cap;
-    assert((cap & (cap - 1)) == 0); // assert its power of 2 (1 or 0 bits set total)
-    if(hs->cap == 0) {
+    //assert((cap & (cap - 1)) == 0); // assert its power of 2 (1 or 0 bits set total)
+    if(cap == 0) {
         hs->cap = _HS_CHUNK_SIZE * _HS_INIT_CHUNK_COUNT;
     } else { 
         hs->cap <<= 1; // *= 2
@@ -125,7 +141,7 @@ int hashset_remove(hashset_t* hs, void* val){
     return 0;
 }
 
-int hashset_in(hashset_t* hs, void* val){
+int hashset_has(hashset_t* hs, void* val){
     if(hs == NULL || hs->count == 0) return 0;
     if(hs->data == NULL) hashset_expand(hs);
     if(val == NULL){ //special case for 0/nullptr
@@ -154,8 +170,9 @@ int hashset_in(hashset_t* hs, void* val){
 
 void hashset_clear(hashset_t* hs){
     if(hs == NULL) return;
+    if(hs->data)
+        memset(hs->data, 0, hs->cap * sizeof(void*));
     hs->count = 0;
-    memset(hs->data, 0, hs->cap * sizeof(void*));
 }
 
 void hashset_destroy(hashset_t* hs){
@@ -164,6 +181,30 @@ void hashset_destroy(hashset_t* hs){
         free(hs->data);
     hs->count = 0;
     hs->cap = 0;
+}
+
+
+hs_iter_t hashset_iter(hashset_t* hs) {
+    if(hs == NULL || hs->data == NULL) return (hs_iter_t){0};
+    hs_iter_t it = {NULL, hs, 0};
+    return it;
+}
+
+int hashset_iter_next(hs_iter_t* it){
+    if(it == NULL) return 0;
+
+    hashset_t* hs = it->_hs;
+    
+    for(size_t i = it->_index; i < hs->cap; i++){
+        if(hs->data[i] != NULL){
+            it->value = hs->data[i];
+            it->_index = i;
+            return 1;
+        }
+    }
+
+    it->_index = hs->cap;
+    return 0;
 }
 
 
