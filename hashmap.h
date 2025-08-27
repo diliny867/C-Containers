@@ -20,7 +20,7 @@ typedef struct hm_iter_t {
     size_t _index;
 } hm_iter_t;
 
-// use only for malloced hm, else hashmap_t hm = {0} is fine to pass to funcs
+// use for malloced hm, else hashmap_t hm = {0} is fine to pass to funcs
 void hashmap_init(hashmap_t* hm);
 // added = 1, changed(existed) = 0
 int hashmap_set(hashmap_t* hm, char* key, void* value);
@@ -49,10 +49,10 @@ int hashmap_iter_next(hm_iter_t* it);
 #ifdef HASHMAP_IMPLEMENTATION
 
 #include <string.h>
-//#include <assert.h>
 
 #define _SOME_PRIME 342049
 #define _HM_INIT_CAP (1 << 8)
+#define _HM_GROW_THRESHOLD 0.8
 
 #ifndef HM_HASH_FUNC
 //http://www.cse.yorku.ca/~oz/hash.html
@@ -65,13 +65,33 @@ size_t djb2(char *str){
 
     return hash;
 }
-#define HS_HASH_FUNC djb2 
+#define HM_HASH_FUNC djb2 
 #endif
 
 void hashmap_init(hashmap_t* hm){
     hm->items = 0;
     hm->count = 0;
     hm->cap = 0;
+}
+
+static int _hashmap_set_unchecked(hashmap_t* hm, char* key, void* value){ // for expanding
+    size_t hash = HM_HASH_FUNC(key);
+    
+    size_t mask = hm->cap - 1;
+    size_t i = hash & mask;
+
+    hm_item_t* items = hm->items;
+    while(1){
+        if(items[i].key == NULL){
+            items[i].key = key;
+            items[i].value = value;
+            hm->count++;
+            return 1;
+        }
+        i = (i + _SOME_PRIME) & mask; // calc next slot
+    }
+
+    return 0;
 }
 
 static inline void hashmap_expand(hashmap_t* hm){
@@ -83,27 +103,31 @@ static inline void hashmap_expand(hashmap_t* hm){
     hm->items = (hm_item_t*)calloc(hm->cap, sizeof(hm_item_t));
     if(old == NULL) return;
     size_t count = hm->count;
-    while(count){
-        if(old->key != NULL){
-            _hashmap_set(hm, old->key, old->value);
+    hm->count = 0;
+    hm_item_t* oldit = old;
+    while(count){ // iterate until we find all keys, so to not iterate tail of NULLs
+        if(oldit->key != NULL){
+            _hashmap_set_unchecked(hm, oldit->key, oldit->value); //can use unchecked as we know keys wont repeat in past hashmap array
             count--;
         }
-        old++;
+        oldit++;
     }
     free(old);
 }
 
 static inline void hashmap_maybe_expand(hashmap_t* hm){
-    if(hm->count < hm->cap * 0.8) return;
+    if(hm->count < hm->cap * _HM_GROW_THRESHOLD) return; // works for hm = {0}, as if wont return if cap is 0
     hashmap_expand(hm);
 }
 
-static int _hashmap_set(hashmap_t* hm, char* key, void* value){
-    size_t hash = HS_HASH_FUNC(key);
+int hashmap_set(hashmap_t* hm, char* key, void* value){
+    if(hm == NULL || key == NULL) return 0;
+    hashmap_maybe_expand(hm);
+    
+    size_t hash = HM_HASH_FUNC(key);
     
     size_t mask = hm->cap - 1;
     size_t i = hash & mask;
-    //i = (i + (i == 0) * _LARGE_PRIME) & mask;
 
     hm_item_t* items = hm->items;
     while(1){
@@ -123,21 +147,14 @@ static int _hashmap_set(hashmap_t* hm, char* key, void* value){
     return 0;
 }
 
-int hashmap_set(hashmap_t* hm, char* key, void* value){
-    if(hm == NULL) return 0;
-    hashmap_maybe_expand(hm);
-    return _hashmap_set(hm, key, value);
-}
-
 int hashmap_tryadd(hashmap_t* hm, char* key, void* value){
-    if(hm == NULL) return 0;
+    if(hm == NULL || key == NULL) return 0;
     hashmap_maybe_expand(hm);
     
-    size_t hash = HS_HASH_FUNC(key);
+    size_t hash = HM_HASH_FUNC(key);
     
     size_t mask = hm->cap - 1;
     size_t i = hash & mask;
-    //i = (i + (i == 0) * _LARGE_PRIME) & mask;
 
     hm_item_t* items = hm->items;
     while(1){
@@ -156,14 +173,13 @@ int hashmap_tryadd(hashmap_t* hm, char* key, void* value){
 }
 
 int hashmap_trychange(hashmap_t* hm, char* key, void* value){
-    if(hm == NULL) return 0;
+    if(hm == NULL || key == NULL) return 0;
     hashmap_maybe_expand(hm);
     
-    size_t hash = HS_HASH_FUNC(key);
+    size_t hash = HM_HASH_FUNC(key);
     
     size_t mask = hm->cap - 1;
     size_t i = hash & mask;
-    //i = (i + (i == 0) * _LARGE_PRIME) & mask;
 
     hm_item_t* items = hm->items;
     while(1){
@@ -180,14 +196,13 @@ int hashmap_trychange(hashmap_t* hm, char* key, void* value){
 }
 
 void* hashmap_get(hashmap_t* hm, char* key){
-    if(hm == NULL || hm->items == NULL) return 0;
-    //assert(hm->items);
+    if(hm == NULL || hm->items == NULL || key == NULL) return 0;
+    //hashmap_maybe_expand(hm);
 
-    size_t hash = HS_HASH_FUNC(key);
+    size_t hash = HM_HASH_FUNC(key);
     
     size_t mask = hm->cap - 1;
     size_t i = hash & mask;
-    //i = (i + (i == 0) * _LARGE_PRIME) & mask;
 
     hm_item_t* items = hm->items;
     while(1){
@@ -202,14 +217,13 @@ void* hashmap_get(hashmap_t* hm, char* key){
 }
 
 void* hashmap_remove(hashmap_t* hm, char* key){
-    if(hm == NULL || hm->items == NULL) return 0;
-    //assert(hm->items);
+    if(hm == NULL || hm->items == NULL || key == NULL) return 0;
+    //hashmap_maybe_expand(hm);
 
-    size_t hash = HS_HASH_FUNC(key);
+    size_t hash = HM_HASH_FUNC(key);
     
     size_t mask = hm->cap - 1;
     size_t i = hash & mask;
-    //i = (i + (i == 0) * _LARGE_PRIME) & mask;
 
     hm_item_t* items = hm->items;
     while(1){
@@ -219,6 +233,7 @@ void* hashmap_remove(hashmap_t* hm, char* key){
             void* value = items[i].value;
             items[i].key = 0;
             items[i].value = 0;
+            hm->count--;
             return value;
         }
         i = (i + _SOME_PRIME) & mask; // calc next slot
@@ -229,7 +244,6 @@ void* hashmap_remove(hashmap_t* hm, char* key){
 
 void hashmap_clear(hashmap_t* hm){
     if(hm == NULL) return;
-    //assert(hm->items);
     if(hm->items)
         memset(hm->items, 0, hm->cap * sizeof(hm_item_t));
     hm->count = 0;
@@ -246,13 +260,12 @@ void hashmap_destroy(hashmap_t* hm){
 
 hm_iter_t hashmap_iter(hashmap_t* hm){
     if(hm == NULL || hm->items == NULL) return (hm_iter_t){0};
-    //assert(hm->items);
     hm_iter_t it = {NULL, NULL, hm, 0};
     return it;
 }
 
 int hashmap_iter_next(hm_iter_t* it){
-    if(it == NULL) return 0;
+    if(it == NULL || it->_hm == NULL) return 0;
 
     hashmap_t* hm = it->_hm;
     
