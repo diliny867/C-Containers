@@ -34,10 +34,10 @@ void hashset_destroy(hashset_t* hs);
 #ifdef HASHSET_IMPLEMENTATION
 
 #include <string.h>
+//#include <assert.h>
 
-#define _SOME_PRIME 342049
-#define _HS_INIT_CAP (1 << 8)
-#define _HS_GROW_THRESHOLD 0.8
+#define _HS_CHUNK_SIZE (1 << 8)
+#define _HS_INIT_CHUNK_COUNT 4
 
 #ifndef HS_HASH_FUNC
 //http://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
@@ -63,139 +63,107 @@ void hashset_init(hashset_t* hs){
     hs->cap = 0;
 }
 
-static int _hashset_add_unchecked(hashset_t* hs, void* val){
-    size_t sv = (size_t)val;
-    size_t hash = HS_HASH_FUNC(sv);
-    
-    size_t mask = hs->cap - 1;
-    size_t i = hash & mask;
-
-    while(1){
-        if(hs->data[i] == NULL){
-            hs->data[i] = val;
-            hs->count++;
-            return 1;
-        }
-        i = (i + _SOME_PRIME) & mask; // calc next slot
-    }
-    return 0;
-}
-
 static inline void hashset_expand(hashset_t* hs){
     size_t cap = hs->cap;
     //assert((cap & (cap - 1)) == 0); // assert its power of 2 (1 or 0 bits set total)
     if(cap == 0) {
-        hs->cap = _HS_INIT_CAP;
+        hs->cap = _HS_CHUNK_SIZE * _HS_INIT_CHUNK_COUNT;
     } else { 
         hs->cap <<= 1; // *= 2
     }
-    void** old = hs->data;
-    hs->data = (void**)calloc(hs->cap + 1, sizeof(void*));
-    if(old == NULL) return;
-    size_t count = hs->count;
-    hs->count = 0;
-    void** oldit = old;
-    if(oldit[cap] != NULL){ //special case for 0/NULL
-        hs->data[hs->cap] = oldit[cap];
-        hs->count++;
-        count--;
-    }
-    while(count){ // iterate until we find all values, so to not iterate tail of NULLs
-        if(*oldit != NULL){
-            _hashset_add_unchecked(hs, *oldit); //can use unchecked as we know values wont repeat and we already handled 0/NULL case
-            count--;
-        }
-        oldit++;
-    }
-    free(old);
-}
-
-static inline void hashset_maybe_expand(hashset_t* hs){
-    if(hs->count < hs->cap * _HS_GROW_THRESHOLD) return; // works for hm = {0}, as if wont return if cap is 0
-    hashset_expand(hs);
+    hs->data = (void**)realloc(hs->data, hs->cap * sizeof(void*));
+    memset(hs->data + cap, 0, (hs->cap - cap) * sizeof(void*)); // because there is no realloc for calloc
 }
 
 int hashset_add(hashset_t* hs, void* val){
     if(hs == NULL) return 0;
-    hashset_maybe_expand(hs);
-    if(val == NULL){ //special case for 0/NULL
-        if(hs->data[hs->cap] != NULL)
+    if(hs->data == NULL) hashset_expand(hs);
+    if(val == NULL){ //special case for 0/nullptr
+        if(hs->data[0] != 0)
             return 0;
-        hs->data[hs->cap] = (void*)1;
+        hs->data[0] = (void*)1;
         hs->count++;
         return 1;
     }
     
     size_t sv = (size_t)val;
+    //size_t hash = _hash(sv);
     size_t hash = HS_HASH_FUNC(sv);
     
-    size_t mask = hs->cap - 1;
+    size_t mask = _HS_CHUNK_SIZE - 1;
     size_t i = hash & mask;
+    i += (i == 0) * _HS_CHUNK_SIZE; //skip first 0 slot
 
     while(1){
-        if(hs->data[i] == NULL){
-            hs->data[i] = val;
+        if(i >= hs->cap)
+            hashset_expand(hs);
+        if(hs->data[i] == 0){
+            hs->data[i] = (void*)sv;
             hs->count++;
             return 1;
         }
-        if(hs->data[i] == val)
+        if(hs->data[i] == (void*)sv)
             return 0;
-        i = (i + _SOME_PRIME) & mask; // calc next slot
+        i += _HS_CHUNK_SIZE;
     }
     return 0;
 }
 
 int hashset_remove(hashset_t* hs, void* val){
-    if(hs == NULL || hs->data == NULL || hs->count == 0) return 0;
-    //hashset_maybe_expand(hs);
-    if(val == NULL){ //special case for 0/NULL
-        if(hs->data[hs->cap] == NULL)
+    if(hs == NULL || hs->count == 0) return 0;
+    if(hs->data == NULL) hashset_expand(hs);
+    if(val == NULL){ //special case for 0/nullptr
+        if(hs->data[0] == 0)
             return 0;
-        hs->data[hs->cap] = NULL;
+        hs->data[0] = (void*)0;
         hs->count--;
         return 1;
     }
 
     size_t sv = (size_t)val;
+    //size_t hash = _hash(sv);
     size_t hash = HS_HASH_FUNC(sv);
     
-    size_t mask = hs->cap - 1;
+    size_t mask = _HS_CHUNK_SIZE - 1;
     size_t i = hash & mask;
+    i += (i == 0) * _HS_CHUNK_SIZE; //skip first 0 slot
 
     while(1){
-        if(hs->data[i] == NULL)
+        if(i >= hs->cap || hs->data[i] == 0)
             return 0;
-        if(hs->data[i] == val){
+        if(hs->data[i] == (void*)sv){
             hs->data[i] = 0;
             hs->count--;
             return 1;
         }
-        i = (i + _SOME_PRIME) & mask; // calc next slot
+        i += _HS_CHUNK_SIZE;
     }
     return 0;
 }
 
 int hashset_has(hashset_t* hs, void* val){
-    if(hs == NULL || hs->data == NULL || hs->count == 0) return 0;
-    //hashset_maybe_expand(hs);
-    if(val == NULL){ //special case for 0/NULL
-        if(hs->data[hs->cap] == NULL)
+    if(hs == NULL || hs->count == 0) return 0;
+    if(hs->data == NULL) hashset_expand(hs);
+    if(val == NULL){ //special case for 0/nullptr
+        if(hs->data[0] == 0)
             return 0;
         return 1;
     }
 
     size_t sv = (size_t)val;
+    //size_t hash = _hash(sv);
     size_t hash = HS_HASH_FUNC(sv);
     
-    size_t mask = hs->cap - 1;
+    size_t mask = _HS_CHUNK_SIZE - 1;
     size_t i = hash & mask;
+    i += (i == 0) * _HS_CHUNK_SIZE; //skip first 0 slot
 
     while(1){
-        if(hs->data[i] == 0)
+        if(i >= hs->cap || hs->data[i] == 0)
             return 0;
-        if(hs->data[i] == val)
+        if(hs->data[i] == (void*)sv)
             return 1;
-        i = (i + _SOME_PRIME) & mask; // calc next slot
+        i += _HS_CHUNK_SIZE;
     }
     return 0;
 }
@@ -203,7 +171,7 @@ int hashset_has(hashset_t* hs, void* val){
 void hashset_clear(hashset_t* hs){
     if(hs == NULL) return;
     if(hs->data)
-        memset(hs->data, 0, (hs->cap + 1) * sizeof(void*));
+        memset(hs->data, 0, hs->cap * sizeof(void*));
     hs->count = 0;
 }
 
@@ -211,7 +179,6 @@ void hashset_destroy(hashset_t* hs){
     if(hs == NULL) return;
     if(hs->data)
         free(hs->data);
-    hs->data = 0;
     hs->count = 0;
     hs->cap = 0;
 }
@@ -224,22 +191,19 @@ hs_iter_t hashset_iter(hashset_t* hs) {
 }
 
 int hashset_iter_next(hs_iter_t* it){
-    if(it == NULL || it->_hs == NULL) return 0;
+    if(it == NULL) return 0;
 
     hashset_t* hs = it->_hs;
     
-    for(size_t i = it->_index; i < hs->cap + 1; i++){
+    for(size_t i = it->_index; i < hs->cap; i++){
         if(hs->data[i] != NULL){
-            if(i == hs->cap)
-                it->value = NULL; //special case for 0/NULL
-            else
-                it->value = hs->data[i];
+            it->value = hs->data[i];
             it->_index = i;
             return 1;
         }
     }
 
-    it->_index = hs->cap + 1;
+    it->_index = hs->cap;
     return 0;
 }
 
