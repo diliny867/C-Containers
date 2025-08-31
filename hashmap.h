@@ -216,6 +216,25 @@ void* hashmap_get(hashmap_t* hm, char* key){
     return 0;
 }
 
+// shifts collision elements, so when finding them there were no holes between elements of same hash(or other hashes that happen to be in that chain of elements)
+static void _hashmap_group(hashmap_t* hs, size_t index){
+    size_t hash;
+    size_t mask = hs->cap - 1;
+    size_t i = (index + _SOME_PRIME) & mask;
+    while(1){
+        hm_item_t item = hs->data[i];
+        if(item.key == NULL) //stop when encountering a hole
+            return;
+
+        hash = HM_HASH_FUNC((size_t)item.key);
+        if((hash & mask) != i){
+            hs->data[index] = item;
+            index = i;
+        }
+        i = (i + _SOME_PRIME) & mask;
+    }
+}
+
 void* hashmap_remove(hashmap_t* hm, char* key){
     if(hm == NULL || hm->items == NULL || key == NULL) return 0;
     //hashmap_maybe_expand(hm);
@@ -234,6 +253,7 @@ void* hashmap_remove(hashmap_t* hm, char* key){
             items[i].key = 0;
             items[i].value = 0;
             hm->count--;
+            _hashmap_group(hm, i);
             return value;
         }
         i = (i + _SOME_PRIME) & mask; // calc next slot
@@ -253,6 +273,7 @@ void hashmap_destroy(hashmap_t* hm){
     if(hm == NULL) return;
     if(hm->items)
         free(hm->items);
+    hm->items = 0;
     hm->count = 0;
     hm->cap = 0;
 }
