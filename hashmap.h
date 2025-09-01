@@ -231,7 +231,7 @@ static void _hashmap_group(hashmap_t* hs, size_t index, size_t hash){
             return;
         }
         ihash = HM_HASH_FUNC((size_t)item.key);
-        if((ihash & mask) != i){
+        if((ihash & mask) == istart){
             ilast = i;
         }
         i = (i + _SOME_PRIME) & mask;
