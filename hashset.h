@@ -145,20 +145,23 @@ int hashset_add(hashset_t* hs, void* val){
     return 0;
 }
 
-// shifts collision elements, so when finding them there were no holes between elements of same hash(or other hashes that happen to be in that chain of elements)
-static void _hashset_group(hashset_t* hs, size_t index){
-    size_t hash;
+// shifts last collision element, so when finding them there were no holes between elements of same hash index
+static void _hashset_group(hashset_t* hs, size_t index, size_t hash){
+    size_t ihash;
     size_t mask = hs->cap - 1;
+    size_t istart = hash & mask;
     size_t i = (index + _SOME_PRIME) & mask;
+    size_t ilast = index;
     while(1){
         void* val = hs->data[i];
-        if(val == NULL) //stop when encountering a hole
+        if(val == NULL){ //stop when encountering a hole
+            hs->data[index] = hs->data[ilast];
+            hs->data[ilast] = 0;
             return;
-
-        hash = HS_HASH_FUNC((size_t)val);
-        if((hash & mask) != i){
-            hs->data[index] = val;
-            index = i;
+        }
+        ihash = HS_HASH_FUNC((size_t)val);
+        if((ihash & mask) == istart){
+            ilast = i;
         }
         i = (i + _SOME_PRIME) & mask;
     }
@@ -187,7 +190,7 @@ int hashset_remove(hashset_t* hs, void* val){
         if(hs->data[i] == val){
             hs->data[i] = 0;
             hs->count--;
-            _hashset_group(hs, i);
+            _hashset_group(hs, i, hash);
             return 1;
         }
         i = (i + _SOME_PRIME) & mask; // calc next slot
@@ -213,9 +216,8 @@ int hashset_has(hashset_t* hs, void* val){
     while(1){
         if(hs->data[i] == 0)
             return 0;
-        if(hs->data[i] == val){
+        if(hs->data[i] == val)
             return 1;
-        }
         i = (i + _SOME_PRIME) & mask; // calc next slot
     }
     return 0;
@@ -255,7 +257,7 @@ int hashset_iter_next(hs_iter_t* it){
                 it->value = NULL; //special case for 0/NULL
             else
                 it->value = hs->data[i];
-            it->_index = i;
+            it->_index = i + 1;
             return 1;
         }
     }

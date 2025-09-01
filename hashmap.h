@@ -216,20 +216,23 @@ void* hashmap_get(hashmap_t* hm, char* key){
     return 0;
 }
 
-// shifts collision elements, so when finding them there were no holes between elements of same hash(or other hashes that happen to be in that chain of elements)
-static void _hashmap_group(hashmap_t* hs, size_t index){
-    size_t hash;
+// shifts last collision element, so when finding them there were no holes between elements of same hash index
+static void _hashmap_group(hashmap_t* hs, size_t index, size_t hash){
+    size_t ihash;
     size_t mask = hs->cap - 1;
+    size_t istart = hash & mask;
     size_t i = (index + _SOME_PRIME) & mask;
+    size_t ilast = index;
     while(1){
-        hm_item_t item = hs->data[i];
-        if(item.key == NULL) //stop when encountering a hole
+        hm_item_t item = hs->items[i];
+        if(item.key == NULL){ //stop when encountering a hole
+            hs->items[index] = hs->items[ilast];
+            hs->items[ilast] = (hm_item_t){0, 0};
             return;
-
-        hash = HM_HASH_FUNC((size_t)item.key);
-        if((hash & mask) != i){
-            hs->data[index] = item;
-            index = i;
+        }
+        ihash = HM_HASH_FUNC((size_t)item.key);
+        if((ihash & mask) != i){
+            ilast = i;
         }
         i = (i + _SOME_PRIME) & mask;
     }
@@ -253,7 +256,7 @@ void* hashmap_remove(hashmap_t* hm, char* key){
             items[i].key = 0;
             items[i].value = 0;
             hm->count--;
-            _hashmap_group(hm, i);
+            _hashmap_group(hm, i, hash);
             return value;
         }
         i = (i + _SOME_PRIME) & mask; // calc next slot
@@ -294,7 +297,7 @@ int hashmap_iter_next(hm_iter_t* it){
         if(hm->items[i].key != NULL){
             it->key = hm->items[i].key;
             it->value = hm->items[i].value;
-            it->_index= i;
+            it->_index= i + 1;
             return 1;
         }
     }
