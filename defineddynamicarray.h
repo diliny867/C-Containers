@@ -18,10 +18,10 @@ struct ddarray {
 		if(dda->count >= dda->cap){ \
 			if(dda->cap == 0) dda->cap = _DDA_DEFAULT_CAP; \
 			else dda->cap *= 2; \
-			dda->data = realloc(dda->data, dda->cap * sizeof(*dda->data)) \
+			dda->data = realloc((void*)dda->data, dda->cap * sizeof(*dda->data)); \
 		} \
-		dda->data[count++] = val \
-	while(0);
+		dda->data[dda->count++] = val; \
+	} while(0)
 
 
 #define sdda_push(dda, val) \
@@ -29,8 +29,8 @@ struct ddarray {
 		if(dda.count >= dda.cap){ \
 			if(dda.cap == 0) dda.cap = _DDA_DEFAULT_CAP; \
 			else dda.cap *= 2; \
-			dda.data = realloc(dda.data, dda.cap * sizeof(*dda.data)) \
+			dda.data = realloc((void*)dda.data, dda.cap * sizeof(*dda.data)); \
 		} \
-		dda.data[count++] = val \
-	while(0);
+		dda.data[dda.count++] = val; \
+	} while(0)
 
