@@ -7,6 +7,9 @@ typedef struct hashset_t {
     void** data;
     size_t count;
     size_t cap; // must be power of 2
+
+    size_t (*_hash) (size_t); // hash function
+    int (*_equal) (void*, void*); // equal function
 } hashset_t;
 
 typedef struct hs_iter_t {
@@ -15,20 +18,20 @@ typedef struct hs_iter_t {
     size_t _index;
 } hs_iter_t;
 
-// use if malloced, else not needed with hashset_t hs = {0};
-void hashset_init(hashset_t* hs);
+void hashset_init(hashset_t* hs, size_t (*hash_func) (size_t), int (*equal_func) (void*, void*));
+void hashset_init_c(hashset_t* hs);
 // added = 1, already exists = 0
-int hashset_add(hashset_t* hs, void* val);
+int hashset_add_(hashset_t* hs, void* val);
 // removed = 1, not exists = 0
-int hashset_remove(hashset_t* hs, void* val);
+int hashset_remove_(hashset_t* hs, void* val);
 // exists = 1, not exists = 0
-int hashset_has(hashset_t* hs, void* val);
+int hashset_has_(hashset_t* hs, void* val);
 void hashset_clear(hashset_t* hs);
 void hashset_destroy(hashset_t* hs);
 
-#define hashset_addi(hs, num)    hashset_add(hs, (void*)num)
-#define hashset_removei(hs, num) hashset_remove(hs, (void*)num)
-#define hashset_hasi(hs, num)    hashset_has(hs, (void*)num)
+#define hashset_add(hs, num)    hashset_add_(hs, (void*)num)
+#define hashset_remove(hs, num) hashset_remove_(hs, (void*)num)
+#define hashset_has(hs, num)    hashset_has_(hs, (void*)num)
 
 
 #ifdef HASHSET_IMPLEMENTATION
@@ -39,9 +42,16 @@ void hashset_destroy(hashset_t* hs);
 #define _HS_INIT_CAP (1 << 8)
 #define _HS_GROW_THRESHOLD 0.8
 
-#ifndef HS_HASH_FUNC
+#ifdef HASHSET_TOMBSTONES
+#define _HS_NOT_TOMBSTONE(i) i.deleted == 0
+#define _HS_SET_TOMBSTONE(i, v) i.deleted = v
+#else
+#define _HS_NOT_TOMBSTONE(i) 1
+#define _HS_SET_TOMBSTONE(i, v)
+#endif
+
 //http://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
-static size_t murmur3(size_t h) {
+static size_t _murmur3(size_t h) {
   h ^= h >> 33;
   h *= 0xff51afd7ed558ccd;
   h ^= h >> 33;
@@ -49,23 +59,29 @@ static size_t murmur3(size_t h) {
   h ^= h >> 33;
   return h;
 }
-#define HS_HASH_FUNC murmur3 
-#endif
+static int _equal(void* a, void* b){
+    return a == b;
+}
 
 //static size_t _hash(size_t val){
 //    size_t h = HS_HASH_FUNC(val);
 //    return h + (h == 0); // make sure its not 0
 //}
 
-void hashset_init(hashset_t* hs){
+void hashset_init(hashset_t* hs, size_t (*hash_func) (size_t), int (*equal_func) (void*, void*)){
     hs->data = 0;
     hs->count = 0;
     hs->cap = 0;
+    hs->_hash = hash_func ? hash_func : _murmur3;
+    hs->_equal = equal_func ? equal_func : _equal;
+}
+void hashset_init_c(hashset_t* hs){
+    hashset_init(hs, _murmur3, _equal);
 }
 
 static int _hashset_add_unchecked(hashset_t* hs, void* val){
     size_t sv = (size_t)val;
-    size_t hash = HS_HASH_FUNC(sv);
+    size_t hash = hs->_hash(sv);
     
     size_t mask = hs->cap - 1;
     size_t i = hash & mask;
@@ -115,7 +131,7 @@ static inline void hashset_maybe_expand(hashset_t* hs){
     hashset_expand(hs);
 }
 
-int hashset_add(hashset_t* hs, void* val){
+int hashset_add_(hashset_t* hs, void* val){
     if(hs == NULL) return 0;
     hashset_maybe_expand(hs);
     if(val == NULL){ //special case for 0/NULL
@@ -127,7 +143,7 @@ int hashset_add(hashset_t* hs, void* val){
     }
     
     size_t sv = (size_t)val;
-    size_t hash = HS_HASH_FUNC(sv);
+    size_t hash = hs->_hash(sv);
     
     size_t mask = hs->cap - 1;
     size_t i = hash & mask;
@@ -138,7 +154,7 @@ int hashset_add(hashset_t* hs, void* val){
             hs->count++;
             return 1;
         }
-        if(hs->data[i] == val)
+        if(hs->_equal(hs->data[i], val))
             return 0;
         i = (i + _SOME_PRIME) & mask; // calc next slot
     }
@@ -159,7 +175,7 @@ static void _hashset_group(hashset_t* hs, size_t index, size_t hash){
             hs->data[ilast] = 0;
             return;
         }
-        ihash = HS_HASH_FUNC((size_t)val);
+        ihash = hs->_hash((size_t)val);
         if((ihash & mask) == istart){
             ilast = i;
         }
@@ -167,7 +183,7 @@ static void _hashset_group(hashset_t* hs, size_t index, size_t hash){
     }
 }
 
-int hashset_remove(hashset_t* hs, void* val){
+int hashset_remove_(hashset_t* hs, void* val){
     if(hs == NULL || hs->data == NULL || hs->count == 0) return 0;
     //hashset_maybe_expand(hs);
     if(val == NULL){ //special case for 0/NULL
@@ -179,7 +195,7 @@ int hashset_remove(hashset_t* hs, void* val){
     }
 
     size_t sv = (size_t)val;
-    size_t hash = HS_HASH_FUNC(sv);
+    size_t hash = hs->_hash(sv);
     
     size_t mask = hs->cap - 1;
     size_t i = hash & mask;
@@ -187,7 +203,7 @@ int hashset_remove(hashset_t* hs, void* val){
     while(1){
         if(hs->data[i] == NULL)
             return 0;
-        if(hs->data[i] == val){
+        if(hs->_equal(hs->data[i], val)){
             hs->data[i] = 0;
             hs->count--;
             _hashset_group(hs, i, hash);
@@ -198,7 +214,7 @@ int hashset_remove(hashset_t* hs, void* val){
     return 0;
 }
 
-int hashset_has(hashset_t* hs, void* val){
+int hashset_has_(hashset_t* hs, void* val){
     if(hs == NULL || hs->data == NULL || hs->count == 0) return 0;
     //hashset_maybe_expand(hs);
     if(val == NULL){ //special case for 0/NULL
@@ -208,7 +224,7 @@ int hashset_has(hashset_t* hs, void* val){
     }
 
     size_t sv = (size_t)val;
-    size_t hash = HS_HASH_FUNC(sv);
+    size_t hash = hs->_hash(sv);
     
     size_t mask = hs->cap - 1;
     size_t i = hash & mask;
@@ -216,7 +232,7 @@ int hashset_has(hashset_t* hs, void* val){
     while(1){
         if(hs->data[i] == 0)
             return 0;
-        if(hs->data[i] == val)
+        if(hs->_equal(hs->data[i], val))
             return 1;
         i = (i + _SOME_PRIME) & mask; // calc next slot
     }

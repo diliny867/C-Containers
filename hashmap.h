@@ -61,11 +61,13 @@ int hashmap_iter_next(hm_iter_t* it);
 #define _HM_GROW_THRESHOLD 0.8
 
 #ifdef HASHMAP_TOMBSTONES
-#define _HS_NOT_TOMBSTONE(i) i.deleted == 0
-#define _HS_SET_TOMBSTONE(i, v) i.deleted = v
+#define _HM_NOT_TOMBSTONE(i) i.deleted == 0
+#define _HM_SET_TOMBSTONE(i, v) i.deleted = v
+#define _HM_GROUP(hm, i, hash)
 #else
-#define _HS_NOT_TOMBSTONE(i) 1
-#define _HS_SET_TOMBSTONE(i, v)
+#define _HM_NOT_TOMBSTONE(i) 1
+#define _HM_SET_TOMBSTONE(i, v)
+#define _HM_GROUP(hm, i, hash) _hashmap_group(hm, i, hash);
 #endif
 
 //http://www.cse.yorku.ca/~oz/hash.html
@@ -126,7 +128,7 @@ static inline void hashmap_expand(hashmap_t* hm){
     hm->count = 0;
     hm_item_t* oldit = old;
     while(count){ // iterate until we find all keys, so to not iterate tail of NULLs
-        if(oldit->key != NULL && _HS_NOT_TOMBSTONE(oldit)){
+        if(oldit->key != NULL && _HM_NOT_TOMBSTONE(oldit)){
             _hashmap_set_unchecked(hm, oldit->key, oldit->value); //can use unchecked as we know keys wont repeat in past hashmap array
             count--;
         }
@@ -152,13 +154,13 @@ int hashmap_set_(hashmap_t* hm, char* key, void* value){
     hm_item_t* slot = NULL; //leave for not tombstones as it wont really change anything (fr wont change anything in actual optimizng compiler)
     hm_item_t* items = hm->items;
     while(1){
-        if(_HS_NOT_TOMBSTONE(items[i])){
+        if(_HM_NOT_TOMBSTONE(items[i])){
             if(items[i].key == NULL){
                 if(slot == NULL)
                     slot = items + i;
                 slot->key = key;
                 slot->value = value;
-                _HS_SET_TOMBSTONE(slot, 0);
+                _HM_SET_TOMBSTONE(slot, 0);
                 hm->count++;
                 return 1;
             }
@@ -186,13 +188,13 @@ int hashmap_tryadd_(hashmap_t* hm, char* key, void* value){
     hm_item_t* slot = NULL; //leave for not tombstones as it wont really change anything (fr wont change anything in actual optimizng compiler)
     hm_item_t* items = hm->items;
     while(1){
-        if(_HS_NOT_TOMBSTONE(items[i])){
+        if(_HM_NOT_TOMBSTONE(items[i])){
             if(items[i].key == NULL){
                 if(slot == NULL)
                     slot = items + i;
                 slot->key = key;
                 slot->value = value;
-                _HS_SET_TOMBSTONE(slot, 0);
+                _HM_SET_TOMBSTONE(slot, 0);
                 hm->count++;
                 return 1;
             }
@@ -217,7 +219,7 @@ int hashmap_trychange_(hashmap_t* hm, char* key, void* value){
 
     hm_item_t* items = hm->items;
     while(1){
-        if(_HS_NOT_TOMBSTONE(items[i])){
+        if(_HM_NOT_TOMBSTONE(items[i])){
             if(items[i].key == NULL)
                 return 0;
             if(hm->_equal(items[i].key, key)){
@@ -242,7 +244,7 @@ void* hashmap_get(hashmap_t* hm, char* key){
 
     hm_item_t* items = hm->items;
     while(1){
-        if(_HS_NOT_TOMBSTONE(items[i])){
+        if(_HM_NOT_TOMBSTONE(items[i])){
             if(items[i].key == NULL)
                 return 0;
             if(hm->_equal(items[i].key, key))
@@ -253,6 +255,30 @@ void* hashmap_get(hashmap_t* hm, char* key){
 
     return 0;
 }
+
+#ifndef HASHMAP_TOMBSTONES
+// shifts last collision element, so when finding them there were no holes between elements of same hash index
+static void _hashmap_group(hashmap_t* hm, size_t index, size_t hash){
+    size_t ihash;
+    size_t mask = hm->cap - 1;
+    size_t istart = hash & mask;
+    size_t i = (index + _SOME_PRIME) & mask;
+    size_t ilast = index;
+    while(1){
+        hm_item_t item = hm->items[i];
+        if(item.key == NULL){ //stop when encountering a hole
+            hm->items[index] = hm->items[ilast];
+            hm->items[ilast] = (hm_item_t){0, 0};
+            return;
+        }
+        ihash = hm->_hash(item.key);
+        if((ihash & mask) == istart){
+            ilast = i;
+        }
+        i = (i + _SOME_PRIME) & mask;
+    }
+}
+#endif
 
 void* hashmap_remove(hashmap_t* hm, char* key){
     if(hm == NULL || hm->items == NULL || key == NULL) return 0;
@@ -265,15 +291,16 @@ void* hashmap_remove(hashmap_t* hm, char* key){
 
     hm_item_t* items = hm->items;
     while(1){
-        if(_HS_NOT_TOMBSTONE(items[i])){
+        if(_HM_NOT_TOMBSTONE(items[i])){
             if(items[i].key == NULL)
                 return 0;
             if(hm->_equal(items[i].key, key)){
                 void* value = items[i].value;
                 items[i].key = 0;
                 items[i].value = 0;
-                _HS_SET_TOMBSTONE(items[i], 1);
+                _HM_SET_TOMBSTONE(items[i], 1);
                 hm->count--;
+                _HM_GROUP(hm, i, hash);
                 return value;
             }
         }
@@ -312,7 +339,7 @@ int hashmap_iter_next(hm_iter_t* it){
     hashmap_t* hm = it->_hm;
     hm_item_t* items = hm->items;
     for(size_t i = it->_index; i < hm->cap; i++){
-        if(items[i].key != NULL && _HS_NOT_TOMBSTONE(items[i])){
+        if(items[i].key != NULL && _HM_NOT_TOMBSTONE(items[i])){
             it->key = items[i].key;
             it->value = items[i].value;
             it->_index= i + 1;
